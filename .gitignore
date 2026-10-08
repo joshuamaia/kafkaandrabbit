@@ -1,0 +1,17 @@
+# IDEs
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# Build
+target/
+
+# Variáveis locais (credenciais)
+.env
+
+# SO
+.DS_Store
+Thumbs.db

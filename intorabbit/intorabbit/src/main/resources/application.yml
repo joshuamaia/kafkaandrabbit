@@ -1,0 +1,77 @@
+# Valores padrão para execução local (fora do Docker).
+# No docker-compose, toda a infraestrutura é sobrescrita por variáveis de ambiente
+# apontando para os nomes dos serviços (postgres, rabbitmq, kafka).
+
+server:
+  # Expõe apenas o Actuator (healthcheck); este serviço não possui endpoints de negócio.
+  port: ${SERVER_PORT:8081}
+
+spring:
+  application:
+    name: intorabbit
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:intorabbit}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # "update" cria a tabela e os índices declarados na entidade. Em produção prefira Flyway/Liquibase.
+      ddl-auto: ${JPA_DDL_AUTO:update}
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    listener:
+      simple:
+        prefetch: 10
+        # Mensagens rejeitadas não voltam para a fila: seguem para a DLQ (x-dead-letter-exchange).
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-retries: 2
+          initial-interval: 2s
+          multiplier: 2
+          max-interval: 10s
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+      acks: all
+      properties:
+        # O contrato é o JSON; o consumidor não depende do nome da classe Java deste serviço.
+        spring.json.add.type.headers: false
+        enable.idempotence: true
+        max.block.ms: 10000
+
+app:
+  rabbitmq:
+    exchange: ${RABBITMQ_EXCHANGE:mensagens.exchange}
+    queue: ${RABBITMQ_QUEUE:mensagens.intorabbit.queue}
+    routing-key: ${RABBITMQ_ROUTING_KEY:mensagens.criada}
+    dead-letter-exchange: ${RABBITMQ_DLX:mensagens.dlx}
+    dead-letter-queue: ${RABBITMQ_DLQ:mensagens.intorabbit.dlq}
+    dead-letter-routing-key: ${RABBITMQ_DLQ_ROUTING_KEY:mensagens.criada.dlq}
+  kafka:
+    topic: ${KAFKA_TOPIC:mensagens.processadas}
+    partitions: ${KAFKA_TOPIC_PARTITIONS:3}
+    replicas: ${KAFKA_TOPIC_REPLICAS:1}
+    send-timeout: 15s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true

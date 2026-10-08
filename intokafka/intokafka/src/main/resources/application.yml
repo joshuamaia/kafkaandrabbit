@@ -1,0 +1,84 @@
+# Valores padrão para execução local (fora do Docker).
+# No docker-compose, toda a infraestrutura é sobrescrita por variáveis de ambiente
+# apontando para os nomes dos serviços (postgres, rabbitmq, kafka).
+
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: intokafka
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:intokafka}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # "update" cria a tabela e os índices declarados na entidade. Em produção prefira Flyway/Liquibase.
+      ddl-auto: ${JPA_DDL_AUTO:update}
+
+  jackson:
+    deserialization:
+      # Rejeita campos que o cliente não deve enviar (id, correlationId, dataCadastro).
+      fail-on-unknown-properties: true
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    # Confirmação síncrona do broker (waitForConfirmsOrDie) + retorno de mensagens sem rota.
+    publisher-confirm-type: simple
+    publisher-returns: true
+    template:
+      mandatory: true
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
+    consumer:
+      group-id: ${app.kafka.consumer-group}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # ErrorHandlingDeserializer evita loop infinito com JSON inválido (o registro vai para a DLT).
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+        spring.json.value.default.type: br.com.joshua.intokafka.dto.MensagemEvent
+        spring.json.use.type.headers: false
+        spring.json.trusted.packages: br.com.joshua.intokafka.dto
+    producer:
+      # Usado apenas para publicar na Dead Letter Topic.
+      acks: all
+
+app:
+  rabbitmq:
+    exchange: ${RABBITMQ_EXCHANGE:mensagens.exchange}
+    queue: ${RABBITMQ_QUEUE:mensagens.intorabbit.queue}
+    routing-key: ${RABBITMQ_ROUTING_KEY:mensagens.criada}
+    dead-letter-exchange: ${RABBITMQ_DLX:mensagens.dlx}
+    dead-letter-queue: ${RABBITMQ_DLQ:mensagens.intorabbit.dlq}
+    dead-letter-routing-key: ${RABBITMQ_DLQ_ROUTING_KEY:mensagens.criada.dlq}
+    confirm-timeout: 5s
+  kafka:
+    topic: ${KAFKA_TOPIC:mensagens.processadas}
+    consumer-group: ${KAFKA_CONSUMER_GROUP:intokafka-group}
+    dead-letter-topic: ${KAFKA_DLT:mensagens.processadas.DLT}
+    partitions: ${KAFKA_TOPIC_PARTITIONS:3}
+    replicas: ${KAFKA_TOPIC_REPLICAS:1}
+    retry-interval: 2s
+    retry-max-attempts: 3
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
